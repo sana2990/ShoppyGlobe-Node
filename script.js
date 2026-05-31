@@ -14,7 +14,7 @@ mongoose
   .catch((err) => console.log("MongoDB Error:", err));
 
 
-app.get("/products",authenticateUser, async (req, res) => {
+app.get("/products", async (req, res) => {
     try {
         const products = await Product.find();
 
@@ -47,7 +47,7 @@ app.get("/products/:id", async (req,res) => {
     }
 });       
 
-app.post("/products", async (req,res)=> {
+app.post("/products",,authenticateUser, async (req,res)=> {
     try{
         const product = new Product(req.body);
         const savedProduct = await product.save();
@@ -65,7 +65,7 @@ app.post("/products", async (req,res)=> {
 });
 
 
-app.post("/cart", async (req, res) => {
+app.post("/cart",authenticateUser, async (req, res) => {
   try {
     const { productId, quantity } = req.body;
 
@@ -106,7 +106,7 @@ app.post("/cart", async (req, res) => {
   }
 });
 
-app.put("/cart/:id", async (req, res) => {
+app.put("/cart/:id",authenticateUser, async (req, res) => {
   try {
     const { quantity } = req.body;
 
@@ -153,7 +153,7 @@ app.put("/cart/:id", async (req, res) => {
 });
 
 //delete from cart and add the deleted quantity in products table
-app.delete("/cart/:productId", async (req, res) => {
+app.delete("/cart/:productId",authenticateUser, async (req, res) => {
   try {
     const productId = req.params.productId;
 
