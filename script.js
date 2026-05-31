@@ -47,7 +47,7 @@ app.get("/products/:id", async (req,res) => {
     }
 });       
 
-app.post("/products",,authenticateUser, async (req,res)=> {
+app.post("/products",authenticateUser, async (req,res)=> {
     try{
         const product = new Product(req.body);
         const savedProduct = await product.save();
