@@ -1,7 +1,15 @@
 {
   "name": "nodeproject",
   "version": "1.0.0",
-  "description": "",
+  "description": "Node Project",
+  "homepage": "https://github.com/sana2990/ShoppyGlobe-Node#readme",
+  "bugs": {
+    "url": "https://github.com/sana2990/ShoppyGlobe-Node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sana2990/ShoppyGlobe-Node.git"
+  },
   "license": "ISC",
   "author": "",
   "type": "commonjs",

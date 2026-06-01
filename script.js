@@ -76,7 +76,7 @@ app.post("/login", async (req, res) => {
 
         // Generate JWT Token (assigned to 1 hour for standard usage instead of 1 minute)
         const accessToken = jwt.sign(
-            { userId: user._index, username: user.username }, 
+            { userId: user._id, username: user.username }, 
             JWT_SECRET, 
             { expiresIn: "1h" }
         );
@@ -130,7 +130,7 @@ app.get("/products/:id", async (req, res) => {
         }
         res.status(200).json(product);
     } catch (error) {
-        res.status(500).json({ message: "Product not found" });
+        res.status(400).json({ message: "Product not found" });
     }
 });       
 
@@ -145,6 +145,56 @@ app.post("/products", authenticateUser, async (req, res) => {
             error: error.message,
         });
     }
+});
+
+app.put("/products/:id", authenticateUser, async (req, res) => {
+  try {
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedProduct) {
+      return res.status(404).json({
+        message: "Product not found"
+      });
+    }
+
+    res.status(200).json({
+      message: "Product updated successfully",
+      product: updatedProduct
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error updating product",
+      error: error.message
+    });
+  }
+});
+
+app.delete("/products/:id", authenticateUser, async (req, res) => {
+  try {
+    const deletedProduct = await Product.findByIdAndDelete(req.params.id);
+
+    if (!deletedProduct) {
+      return res.status(404).json({
+        message: "Product not found"
+      });
+    }
+
+    res.status(200).json({
+      message: "Product deleted successfully",
+      product: deletedProduct
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error deleting product",
+      error: error.message
+    });
+  }
 });
 
 
@@ -203,6 +253,40 @@ app.put("/cart/:id", authenticateUser, async (req, res) => {
     res.status(200).json({ message: "Cart updated successfully", cartItem });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+app.get("/cart", authenticateUser, async (req, res) => {
+  try {
+    const cartItems = await Cart.find();
+
+    res.status(200).json(cartItems);
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error fetching cart items",
+      error: error.message
+    });
+  }
+});
+
+app.get("/cart/:id", authenticateUser, async (req, res) => {
+  try {
+    const cartItem = await Cart.findById(req.params.id);
+
+    if (!cartItem) {
+      return res.status(404).json({
+        message: "Cart item not found"
+      });
+    }
+
+    res.status(200).json(cartItem);
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error fetching cart item",
+      error: error.message
+    });
   }
 });
 
