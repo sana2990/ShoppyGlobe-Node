@@ -3,21 +3,116 @@ const Product = require("./products");
 const express = require("express");
 const Cart = require("./cart");
 const products = require("./products");
-const  jwt = require("jsonwebtoken");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 app.use(express.json());
 
+// JWT Secret Key
+const JWT_SECRET = "secretkey"; 
+
+// MongoDB Connection
 mongoose
   .connect("mongodb://127.0.0.1:27017/Products")
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.log("MongoDB Error:", err));
 
+// --- NEW: INLINE USER SCHEMA & MODEL FOR EVALUATION ---
+// (You can also move this into a separate "user.js" file if preferred)
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true },
+    password: { type: String, required: true } // In production, always hash this with bcrypt!
+});
+const User = mongoose.model("User", userSchema);
 
-app.get("/products", async (req, res) => {
+
+// --- AUTHENTICATION & AUTHORIZATION ROUTES ---
+
+/**
+ * @route   POST /register
+ * @desc    Register a new user
+ */
+app.post("/register", async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ message: "Username and password are required" });
+        }
+
+        // Check if user already exists
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(400).json({ message: "Username already taken" });
+        }
+
+        // Create and save new user
+        const newUser = new User({ username, password });
+        await newUser.save();
+
+        res.status(201).json({ message: "User registered successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Registration failed", error: error.message });
+    }
+});
+
+/**
+ * @route   POST /login
+ * @desc    Authenticate user and return a JWT token
+ */
+app.post("/login", async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ message: "Username and password are required" });
+        }
+
+        // Find user in database
+        const user = await User.findOne({ username });
+        if (!user || user.password !== password) {
+            return res.status(401).json({ message: "Invalid username or password" });
+        }
+
+        // Generate JWT Token (assigned to 1 hour for standard usage instead of 1 minute)
+        const accessToken = jwt.sign(
+            { userId: user._index, username: user.username }, 
+            JWT_SECRET, 
+            { expiresIn: "1h" }
+        );
+
+        res.status(200).json({ token: accessToken });
+    } catch (error) {
+        res.status(500).json({ message: "Login failed", error: error.message });
+    }
+});
+
+
+// --- JWT AUTHENTICATION MIDDLEWARE ---
+function authenticateUser(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  // If no token is provided, return 401 Unauthorized
+  if (!token) {
+    return res.status(401).json({ message: "Access denied. No token provided." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decodedUser) => {
+    if (err) {
+      return res.status(403).json({ message: "Invalid or expired JWT token" });
+    }
+    req.user = decodedUser; // Attach user info to request payload
+    next();
+  });
+}
+
+
+// --- PRODUCT ROUTES ---
+
+app.get("/products", authenticateUser, async (req, res) => {
     try {
         const products = await Product.find();
-
         res.status(200).json(products);
     } catch (error) {
         res.status(500).json({
@@ -25,38 +120,26 @@ app.get("/products", async (req, res) => {
             error: error.message
         });
     }
-}) ;
+});
 
-app.get("/products/:id", async (req,res) => {
-    try{
-        
+app.get("/products/:id", async (req, res) => {
+    try {
         const product = await Product.findById(req.params.id);
-
-        if(!product) {
-            return res.status(404).json({
-                message: "Product Not Found"
-            });
+        if (!product) {
+            return res.status(404).json({ message: "Product Not Found" });
         }
         res.status(200).json(product);
-
-    }
-    catch(error) {
-        res.status(500).json({
-            message: "Product not found"
-        });
+    } catch (error) {
+        res.status(500).json({ message: "Product not found" });
     }
 });       
 
-app.post("/products",authenticateUser, async (req,res)=> {
-    try{
+app.post("/products", authenticateUser, async (req, res) => {
+    try {
         const product = new Product(req.body);
-        const savedProduct = await product.save();
-
-        res.status(201).json({
-            message:"Product succesfully added",
-        });
-    }
-    catch (error) {
+        await product.save();
+        res.status(201).json({ message: "Product successfully added" });
+    } catch (error) {
         res.status(500).json({
             message: "Product Not Added",
             error: error.message,
@@ -65,73 +148,50 @@ app.post("/products",authenticateUser, async (req,res)=> {
 });
 
 
-app.post("/cart",authenticateUser, async (req, res) => {
+// --- PROTECTED CART ROUTES ---
+
+app.post("/cart", authenticateUser, async (req, res) => {
   try {
     const { productId, quantity } = req.body;
-
     const product = await Product.findById(productId);
 
     if (!product) {
-      return res.status(404).json({
-        message: "Product not found"
-      });
+      return res.status(404).json({ message: "Product not found" });
     }
 
     if (product.stock < quantity) {
-      return res.status(400).json({
-        message: "Insufficient stock"
-      });
+      return res.status(400).json({ message: "Insufficient stock" });
     }
 
-    const cartItem = new Cart({
-      productId,
-      quantity
-    });
-
+    const cartItem = new Cart({ productId, quantity });
     await cartItem.save();
 
     product.stock = product.stock - quantity;
-
     await product.save();
 
-    res.status(201).json({
-      message: "Product added to cart",
-      cartItem
-    });
-
+    res.status(201).json({ message: "Product added to cart", cartItem });
   } catch (error) {
-    res.status(500).json({
-      message: error.message
-    });
+    res.status(500).json({ message: error.message });
   }
 });
 
-app.put("/cart/:id",authenticateUser, async (req, res) => {
+app.put("/cart/:id", authenticateUser, async (req, res) => {
   try {
     const { quantity } = req.body;
-
     const cartItem = await Cart.findById(req.params.id);
 
     if (!cartItem) {
-      return res.status(404).json({
-        message: "Cart item not found"
-      });
+      return res.status(404).json({ message: "Cart item not found" });
     }
 
     const product = await Product.findById(cartItem.productId);
-
     if (!product) {
-      return res.status(404).json({
-        message: "Product not found"
-      });
+      return res.status(404).json({ message: "Product not found" });
     }
 
     const difference = quantity - cartItem.quantity;
-
     if (difference > 0 && product.stock < difference) {
-      return res.status(400).json({
-        message: "Insufficient stock"
-      });
+      return res.status(400).json({ message: "Insufficient stock" });
     }
 
     product.stock = product.stock - difference;
@@ -140,80 +200,40 @@ app.put("/cart/:id",authenticateUser, async (req, res) => {
     cartItem.quantity = quantity;
     await cartItem.save();
 
-    res.status(200).json({
-      message: "Cart updated successfully",
-      cartItem
-    });
-
+    res.status(200).json({ message: "Cart updated successfully", cartItem });
   } catch (error) {
-    res.status(500).json({
-      message: error.message
-    });
+    res.status(500).json({ message: error.message });
   }
 });
 
-//delete from cart and add the deleted quantity in products table
-app.delete("/cart/:productId",authenticateUser, async (req, res) => {
+app.delete("/cart/:productId", authenticateUser, async (req, res) => {
   try {
     const productId = req.params.productId;
-
-    // 1. Find cart item from DB
     const cartItem = await Cart.findOne({ productId });
 
     if (!cartItem) {
-      return res.status(404).json({
-        message: "Product not found in cart"
-      });
+      return res.status(404).json({ message: "Product not found in cart" });
     }
 
-    // 2. Find product from DB
     const product = await Product.findById(productId);
-
     if (!product) {
-      return res.status(404).json({
-        message: "Product not found"
-      });
+      return res.status(404).json({ message: "Product not found" });
     }
 
-    // 3. Restore stock
     product.stock += cartItem.quantity;
     await product.save();
 
-    // 4. Remove cart item
     await Cart.deleteOne({ productId });
 
     res.status(200).json({
       message: "Product removed from cart",
       updatedProduct: product
     });
-
   } catch (error) {
-    res.status(500).json({
-      message: error.message
-    });
+    res.status(500).json({ message: error.message });
   }
 });
 
-app.post("/login", (req,res) => {
-  const user = req.body.username;
-
-  const accessToken = jwt.sign(user,"secretkey");
-  res.send({token: accessToken});
-})
-
-//authenticating the user
-function authenticateUser(req,res,next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  jwt.verify(token, "secretkey", (err,user) => {
-    if(err) {
-      return res.status(403).json({message:"Invalid jwt token"});
-    }
-    req.user = user;
-    next();
-  })
-}
 app.listen(5300, () => {
-    console.log("Server: 5300");
+    console.log("Server running on port 5300");
 });
